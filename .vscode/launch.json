@@ -1,0 +1,149 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Train - Single GPU",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/train.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "3",
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "args": []
+        },
+        {
+            "name": "Train - Multi-GPU",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/train.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "args": [
+                "trainer.devices=[0, 1]",
+                "trainer.strategy=ddp"
+            ]
+        },
+        {
+            "name": "Train - CPU Debug",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/train.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "",
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "args": [
+                "trainer.accelerator=cpu",
+                "trainer.devices=1",
+                "data.batch_size=2",
+                "trainer.fast_dev_run=true"
+            ]
+        },
+        {
+            "name": "Train - Override Config",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/train.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "args": [
+                "data.batch_size=8",
+                "model.learning_rate=1e-4",
+                "model.hidden_dims=[128,256,128]",
+                "trainer.max_epochs=10"
+            ]
+        },
+        {
+            "name": "Train - Fast Dev Run",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/train.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "args": [
+                "trainer.fast_dev_run=true",
+                "data.batch_size=2"
+            ]
+        },
+        {
+            "name": "Train - Custom Data Path",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/train.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "args": [
+                "data.data_dir=/path/to/your/data",
+                "data.batch_size=16",
+                "data.num_workers=2"
+            ]
+        },
+        {
+            "name": "Train - Hyperparameter Sweep",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/train.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "args": [
+                "-m",
+                "model.learning_rate=1e-3,1e-4",
+                "model.dropout=0.1,0.2",
+                "data.batch_size=16,32"
+            ]
+        },
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
+        {
+            "name": "Train - Debug DataLoader",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/train.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "",
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "args": [
+                "trainer.accelerator=cpu",
+                "trainer.devices=1",
+                "data.num_workers=0",  // Important for debugging
+                "data.batch_size=1",
+                "trainer.limit_train_batches=2",
+                "trainer.limit_val_batches=2"
+            ]
+        }
+    ]
+}

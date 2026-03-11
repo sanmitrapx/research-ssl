@@ -1,0 +1,12 @@
+defaults:
+  - model: sonata_cp_classifier
+  - data: sonata_h5_cp
+  - trainer: sonata_cp
+  - _self_
+
+experiment_name: sonata_frozen_classifier_decoder
+seed: 42
+
+hydra:
+  run:
+    dir: outputs/${experiment_name}/${now:%Y-%m-%d_%H-%M-%S}

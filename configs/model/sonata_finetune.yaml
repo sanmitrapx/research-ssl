@@ -1,0 +1,12 @@
+_target_: src.models.sonata_finetune.SonataFineTuneModel
+pretrained_repo: facebook/sonata
+freeze_encoder: false  # Enable encoder finetuning
+encoder_lr: 1e-5  # Lower learning rate for pretrained encoder
+decoder_lr: 1e-4  # Higher learning rate for new layers
+sonata_dim: 512
+decoder_dims: [512, 256, 128, 64]
+output_dim: 1
+weight_decay: 1e-4
+warmup_epochs: 5
+max_epochs: 1000
+dropout: 0.1

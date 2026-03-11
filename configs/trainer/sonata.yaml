@@ -1,0 +1,33 @@
+_target_: pytorch_lightning.Trainer
+accelerator: gpu
+devices: -1  # Use all GPUs
+strategy: ddp_find_unused_parameters_true
+precision: 'bf16-mixed'
+max_epochs: 500
+check_val_every_n_epoch: 5
+gradient_clip_val: 1.0
+accumulate_grad_batches: 8
+# limit_train_batches: 0.2
+# limit_val_batches: 0.1
+
+callbacks:
+  - _target_: pytorch_lightning.callbacks.ModelCheckpoint
+    monitor: val_loss
+    mode: min
+    save_top_k: 3
+    save_last: true
+    filename: 'transolver-sonata-{epoch:02d}-{val_loss:.4f}'
+    
+  - _target_: pytorch_lightning.callbacks.EarlyStopping
+    monitor: val_loss
+    patience: 25
+    mode: min
+    
+  - _target_: pytorch_lightning.callbacks.LearningRateMonitor
+    logging_interval: step
+
+logger:
+  _target_: pytorch_lightning.loggers.WandbLogger
+  project: transolver_sonata_pressure
+  name: ${experiment_name}
+  save_dir: ${hydra:runtime.output_dir}/logs

@@ -1,0 +1,15 @@
+_target_: src.data.sonata_datamodule.SonataDataModule
+data_dir: /mnt/storage01/workspace/research/zephyr/02_processed/DrivAerNet/140b9b2dc4e57ccc4e6856fdc1a116126b724ba2522232f88131827edc9e602e
+batch_size: 4
+num_workers: 8
+h5_filename: mesh.h5
+train_list_file: train_design_ids.txt
+test_list_file: test_design_ids.txt
+normalize: true
+grid_size: 0.02
+batching_enabled: true
+use_cp_binning: true
+num_cp_bins: 64
+recompute_stats: false
+color_mode: physics
+freestream_direction: [1.0, 0.0, 0.0]

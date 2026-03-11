@@ -1,0 +1,15 @@
+# Ignore large/generated files
+__pycache__/
+*.pyc
+*.pyo
+outputs/
+logs/*.out
+logs/*.err
+*.pkl
+*.pt
+*.ckpt
+wandb/
+.hydra/
+plots/*.png
+data/deltas/
+

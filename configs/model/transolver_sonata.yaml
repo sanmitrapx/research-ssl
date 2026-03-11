@@ -1,0 +1,23 @@
+_target_: models.transolver_sonata_lightning_cached.TransolverSonataModel
+
+# Sonata parameters
+sonata_repo: facebook/sonata
+freeze_sonata: true
+sonata_dim: 512
+
+# Transolver parameters  
+hidden_dim: 128
+num_layers: 8
+num_heads: 8
+slice_num: 32
+mlp_ratio: 4
+dropout: 0.1
+
+# Output parameters
+output_dim: 1
+
+# Training parameters
+learning_rate: 0.001
+weight_decay: 1e-4
+warmup_steps: 1
+max_steps: 100000

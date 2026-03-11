@@ -1,0 +1,21 @@
+_target_: src.models.sonata_cp_classifier.SonataCpClassifier
+sonata_repo: facebook/sonata
+finetune_strategy: layerwise_lr
+decoder_dims: [512, 512, 256, 256]
+num_cp_bins: 64
+upcast_dim: 1088
+num_concat_levels: 2
+use_geometric_features: false
+learning_rate: 1e-4
+head_lr: 1e-3
+weight_decay: 0.01
+lr_decay_rate: 0.65
+unfreeze_from_stage: 3
+warmup_frozen_epochs: 10
+max_epochs: 100
+dropout: 0.1
+loss_type: ce_emd
+weighted_emd: true
+lambda_emd: 0.1
+lambda_recon: 0.0
+label_smoothing_sigma: 2.0
