@@ -8,7 +8,6 @@ import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 
 from src.data.sonata_datamodule import SonataDataModule
-from src.models.sonata_cp_classifier import SonataCpClassifier
 
 
 @hydra.main(config_path="../configs", config_name="config", version_base=None)
@@ -20,9 +19,9 @@ def main(cfg: DictConfig):
     dm = SonataDataModule(**data_cfg)
 
     print("Loading model...")
-    model_cfg = {k: v for k, v in cfg.model.items() if not k.startswith("_")}
-    model_cfg["bin_centers"] = dm.bin_centers
-    model = SonataCpClassifier(**model_cfg)
+    model_target = cfg.model.get("_target_", "src.models.sonata_cp_classifier.SonataCpClassifier")
+    print(f"  Model class: {model_target}")
+    model = hydra.utils.instantiate(cfg.model, bin_centers=dm.bin_centers, _convert_="partial")
 
     total = sum(p.numel() for p in model.parameters())
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)

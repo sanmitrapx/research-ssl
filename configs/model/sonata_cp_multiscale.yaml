@@ -1,4 +1,4 @@
-_target_: src.models.sonata_cp_classifier.SonataCpClassifier
+_target_: src.models.sonata_cp_multiscale.SonataCpMultiScale
 sonata_repo: facebook/sonata
 decoder_dims: [512, 512, 256, 256]
 num_cp_bins: 64
@@ -16,3 +16,5 @@ weighted_emd: true
 lambda_emd: 0.1
 lambda_recon: 0.0
 label_smoothing_sigma: 2.0
+num_cp_bins_coarse: 32
+lambda_coarse: 0.5

@@ -1,4 +1,4 @@
-_target_: src.models.sonata_cp_classifier.SonataCpClassifier
+_target_: src.models.sonata_cp_boundary.SonataCpBoundary
 sonata_repo: facebook/sonata
 decoder_dims: [512, 512, 256, 256]
 num_cp_bins: 64
@@ -16,3 +16,6 @@ weighted_emd: true
 lambda_emd: 0.1
 lambda_recon: 0.0
 label_smoothing_sigma: 2.0
+boundary_alpha: 2.0
+boundary_k: 16
+boundary_max_points: 80000

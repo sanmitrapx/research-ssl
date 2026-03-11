@@ -163,7 +163,6 @@ class SonataDataModule(pl.LightningDataModule):
 
     def _transform_item(self, item, transform):
         """Convert an H5MeshDataset dict into a Sonata-compatible Point dict."""
-        normals = item["vertices"].astype(np.float32)  # will be overwritten
         normals = item["normals"].astype(np.float32)
         deltas = item["deltas"].astype(np.float32)
         color = self._compute_color(normals.copy(), deltas.copy())

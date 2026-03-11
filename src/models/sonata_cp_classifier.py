@@ -7,7 +7,6 @@ import sonata
 
 from .utils.losses import EMDLoss, LpLoss
 
-FINETUNE_STRATEGIES = ("frozen", "full", "layerwise_lr", "partial_unfreeze", "two_stage")
 LOSS_TYPES = ("ce_emd", "ordinal_kl")
 
 
@@ -34,12 +33,7 @@ class SonataCpClassifier(pl.LightningModule):
     then mapped to original-resolution points using the GridSample
     inverse mapping.  A residual MLP predicts per-point Cp bin logits.
 
-    Fine-tuning strategies (``finetune_strategy``):
-        frozen           -- encoder fully frozen, only head trains
-        full             -- all parameters trained with a single LR
-        layerwise_lr     -- per-stage LR decay (lower LR for early stages)
-        partial_unfreeze -- freeze stages 0..(unfreeze_from_stage-1)
-        two_stage        -- head-only for ``warmup_frozen_epochs``, then full FT
+    Fine-tuning: layerwise LR decay (lower LR for early encoder stages).
 
     Loss types (``loss_type``):
         ce_emd      -- CrossEntropy + lambda_emd * EMD
@@ -52,7 +46,6 @@ class SonataCpClassifier(pl.LightningModule):
     def __init__(
         self,
         sonata_repo: str = "facebook/sonata",
-        finetune_strategy: str = "layerwise_lr",
         decoder_dims: list = (512, 512, 256, 256),
         num_cp_bins: int = 64,
         bin_centers: list = None,
@@ -63,8 +56,6 @@ class SonataCpClassifier(pl.LightningModule):
         head_lr: float = 0.001,
         weight_decay: float = 0.01,
         lr_decay_rate: float = 0.65,
-        unfreeze_from_stage: int = 3,
-        warmup_frozen_epochs: int = 10,
         max_epochs: int = 100,
         dropout: float = 0.1,
         loss_type: str = "ce_emd",
@@ -74,10 +65,6 @@ class SonataCpClassifier(pl.LightningModule):
         label_smoothing_sigma: float = 2.0,
     ):
         super().__init__()
-        if finetune_strategy not in FINETUNE_STRATEGIES:
-            raise ValueError(
-                f"Unknown strategy '{finetune_strategy}', choose from {FINETUNE_STRATEGIES}"
-            )
         if loss_type not in LOSS_TYPES:
             raise ValueError(
                 f"Unknown loss_type '{loss_type}', choose from {LOSS_TYPES}"
@@ -97,8 +84,6 @@ class SonataCpClassifier(pl.LightningModule):
         self.sonata = sonata.model.load(
             "sonata", repo_id=sonata_repo, custom_config=custom_config
         )
-
-        self._apply_freeze_strategy(finetune_strategy, unfreeze_from_stage)
 
         K = len(self.bin_centers)
         point_feat_dim = upcast_dim
@@ -120,21 +105,6 @@ class SonataCpClassifier(pl.LightningModule):
         )
         self.ce_loss = nn.CrossEntropyLoss()
         self.rl2_loss = LpLoss()
-
-    def _apply_freeze_strategy(self, strategy, unfreeze_from_stage):
-        if strategy in ("frozen", "two_stage"):
-            for p in self.sonata.parameters():
-                p.requires_grad = False
-        elif strategy == "partial_unfreeze":
-            for p in self.sonata.parameters():
-                p.requires_grad = False
-            for p in self.sonata.embedding.parameters():
-                p.requires_grad = False
-            for s in range(unfreeze_from_stage, 5):
-                stage = getattr(self.sonata.enc, f"enc{s}", None)
-                if stage is not None:
-                    for p in stage.parameters():
-                        p.requires_grad = True
 
     def _build_head(self, input_dim, decoder_dims, num_bins, dropout):
         """Build residual MLP head.
@@ -182,17 +152,7 @@ class SonataCpClassifier(pl.LightningModule):
         return point
 
     def forward(self, point_data):
-        strategy = self.hparams.finetune_strategy
-        use_no_grad = (
-            strategy == "frozen"
-            or (strategy == "two_stage" and self.current_epoch < self.hparams.warmup_frozen_epochs)
-        )
-
-        if use_no_grad:
-            with torch.no_grad():
-                encoded = self.sonata(point_data)
-        else:
-            encoded = self.sonata(point_data)
+        encoded = self.sonata(point_data)
 
         encoded = self._upcast_features(encoded, self.hparams.num_concat_levels)
         feat = encoded.feat
@@ -214,15 +174,6 @@ class SonataCpClassifier(pl.LightningModule):
         cp_hat = (probs * self.bin_centers).sum(dim=-1)
 
         return dict(logits=logits, probs=probs, cp_hat=cp_hat)
-
-    def on_train_epoch_start(self):
-        if (
-            self.hparams.finetune_strategy == "two_stage"
-            and self.current_epoch == self.hparams.warmup_frozen_epochs
-        ):
-            print(f"[two_stage] Unfreezing encoder at epoch {self.current_epoch}")
-            for p in self.sonata.parameters():
-                p.requires_grad = True
 
     def _ordinal_kl_loss(self, logits, target_bins):
         """Gaussian-smoothed ordinal KL divergence loss."""
@@ -298,18 +249,10 @@ class SonataCpClassifier(pl.LightningModule):
         return groups
 
     def configure_optimizers(self):
-        strategy = self.hparams.finetune_strategy
-        lr = self.hparams.learning_rate
         head_lr = self.hparams.head_lr
         wd = self.hparams.weight_decay
 
-        if strategy == "layerwise_lr":
-            param_groups = self._get_encoder_param_groups()
-        else:
-            param_groups = [
-                {"params": [p for p in self.sonata.parameters() if p.requires_grad], "lr": lr}
-            ]
-
+        param_groups = self._get_encoder_param_groups()
         param_groups.append({
             "params": self.cp_classifier_head.parameters(),
             "lr": head_lr,
