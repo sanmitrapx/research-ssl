@@ -3,8 +3,8 @@ sonata_repo: facebook/sonata
 finetune_strategy: layerwise_lr
 decoder_dims: [512, 512, 256, 256]
 num_cp_bins: 64
-upcast_dim: 1088
-num_concat_levels: 2
+upcast_dim: 1232
+num_concat_levels: 4
 use_geometric_features: false
 learning_rate: 1e-4
 head_lr: 1e-3

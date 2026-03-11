@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=grid_abl
+#SBATCH --job-name=bins_abl
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=2
@@ -7,23 +7,23 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=64G
 #SBATCH --time=24:00:00
-#SBATCH --output=logs/grid_abl_%j.out
-#SBATCH --error=logs/grid_abl_%j.err
+#SBATCH --output=logs/bins_abl_%j.out
+#SBATCH --error=logs/bins_abl_%j.err
 
 source /opt/miniconda/etc/profile.d/conda.sh
 conda activate sonata
 
 GRID=0.01
 COLOR=physics
-BINS=64
+BINS=128
 LOSS=ce_emd
 EPOCHS=150
-EXP_NAME="grid_001"
+EXP_NAME="bins_128_grid001"
 
 echo "========================================="
 echo "Job ID: ${SLURM_JOB_ID}"
-echo "Experiment: ${EXP_NAME}  grid_size=${GRID}"
-echo "bins=${BINS}, loss=${LOSS}, color=${COLOR}, epochs=${EPOCHS}"
+echo "Experiment: ${EXP_NAME}  bins=${BINS}  grid=${GRID}"
+echo "loss=${LOSS}, color=${COLOR}, epochs=${EPOCHS}"
 echo "batch_size=1, accumulate_grad_batches=4 (effective=4)"
 echo "Node: $(hostname), GPUs: 2"
 echo "Start time: $(date)"

@@ -166,13 +166,19 @@ class SonataCpClassifier(pl.LightningModule):
 
     @staticmethod
     def _upcast_features(point, num_concat_levels):
-        """Up-cast encoder features to grid-sample resolution."""
+        """Up-cast encoder features to grid-sample resolution.
+
+        Walks up the pooling hierarchy: at each level, upsample the
+        coarse features via the inverse mapping and concat with the
+        finer parent features, then move to the parent level.
+        """
         for _ in range(num_concat_levels):
             parent = point.pop("pooling_parent")
             inverse = point.pop("pooling_inverse")
-            point.feat = torch.cat(
-                [point.feat, parent.feat[inverse]], dim=-1
+            parent.feat = torch.cat(
+                [parent.feat, point.feat[inverse]], dim=-1
             )
+            point = parent
         return point
 
     def forward(self, point_data):
@@ -191,14 +197,17 @@ class SonataCpClassifier(pl.LightningModule):
         encoded = self._upcast_features(encoded, self.hparams.num_concat_levels)
         feat = encoded.feat
 
+        # Map grid-sampled features back to original mesh resolution
+        inverse = point_data["inverse"]
+        feat = feat[inverse]
+
         if self.hparams.use_geometric_features:
-            inverse = point_data["inverse"]
             geo = torch.cat([
                 point_data["uncentered_coord"],
                 point_data["untransformed_normal"],
                 point_data["untransformed_deltas"],
             ], dim=-1)
-            feat = torch.cat([feat, geo[inverse]], dim=-1)
+            feat = torch.cat([feat, geo], dim=-1)
 
         logits = self.cp_classifier_head(feat)
         probs = F.softmax(logits, dim=-1)

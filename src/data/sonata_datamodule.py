@@ -87,13 +87,16 @@ class SonataDataModule(pl.LightningDataModule):
         return self.base.cp_binning_stats.bin_centers.tolist()
 
     def _build_transform(self, mode):
+        # GridSample test mode returns a list of augmentations which breaks
+        # downstream transforms; use train mode for both (only difference is
+        # which point within each voxel is selected -- negligible variance).
         cfg = [
             dict(type="CenterShift", apply_z=True),
             dict(
                 type="GridSample",
                 grid_size=self.grid_size,
                 hash_type="fnv",
-                mode=mode,
+                mode="train",
                 return_grid_coord=True,
                 return_inverse=True,
             ),
@@ -194,44 +197,42 @@ class SonataDataModule(pl.LightningDataModule):
     def _collate_batched(self, items):
         """Collate multiple transformed items into a single batched dict.
 
-        Crucially offsets the ``inverse`` indices so they point into the
-        concatenated (not per-sample) coordinate tensor.
+        Crucially:
+        - Builds cumulative ``offset`` for Sonata's Point structure
+        - Shifts ``inverse`` indices so they index into the concatenated coord
+        - Builds ``mesh_batch`` for mapping original-resolution points to samples
         """
-        points = [p for p in items]
         collated = {}
-        cumulative_coord = 0
-        mesh_batch_list = []
 
-        for i, point in enumerate(points):
-            n_original = point["uncentered_coord"].shape[0]
-            mesh_batch_list.append(torch.full((n_original,), i, dtype=torch.long))
-
-        coord_count = 0
-        for key in points[0].keys():
-            val = points[0][key]
-            if torch.is_tensor(val):
-                collated[key] = torch.cat([p[key] for p in points])
+        # Concatenate all tensor keys, keep scalars from first item
+        for key in items[0].keys():
+            vals = [p[key] for p in items]
+            if torch.is_tensor(vals[0]):
+                collated[key] = torch.cat(vals)
             else:
-                collated[key] = val
+                collated[key] = vals[0]
 
-        if "inverse" in collated:
-            offset = 0
-            result = []
-            for point in points:
-                inv = point["inverse"]
-                result.append(inv + offset)
-                if "coord" in point:
-                    offset += point["coord"].shape[0]
-            collated["inverse"] = torch.cat(result)
+        # Sonata expects offset = cumsum of per-sample grid-sampled coord counts
+        coord_sizes = [p["coord"].shape[0] for p in items]
+        collated["offset"] = torch.cumsum(
+            torch.tensor(coord_sizes, dtype=torch.long), dim=0
+        )
 
-        vals = [p["uncentered_coord"] for p in points]
-        sizes = torch.cumsum(
-            torch.tensor([v.shape[0] for v in vals]), dim=0
-        ).int()
+        # Shift inverse indices to point into concatenated coord tensor
+        if "inverse" in items[0]:
+            inv_parts = []
+            coord_offset = 0
+            for p in items:
+                inv_parts.append(p["inverse"] + coord_offset)
+                coord_offset += p["coord"].shape[0]
+            collated["inverse"] = torch.cat(inv_parts)
+
+        # mesh_batch: which sample each original-resolution point belongs to
+        mesh_batch_list = []
+        for i, p in enumerate(items):
+            n = p["uncentered_coord"].shape[0]
+            mesh_batch_list.append(torch.full((n,), i, dtype=torch.long))
         collated["mesh_batch"] = torch.cat(mesh_batch_list)
-
-        if all(torch.is_tensor(p.get("coord")) for p in points):
-            pass
 
         return collated
 

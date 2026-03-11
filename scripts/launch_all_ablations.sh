@@ -1,24 +1,27 @@
 #!/bin/bash
 set -e
 
-echo "=== Launching ablation pipeline ==="
+echo "=== Launching ablation pipeline (priorities 1-3) ==="
+echo ""
 
-# Stage 1: Color feature ablation
-JOB1=$(sbatch --parsable scripts/ablate_color.sh)
-echo "Stage 1 (Color): Job ${JOB1}"
+# All three axes run in parallel -- no dependencies needed
+JOB1=$(sbatch --parsable scripts/ablate_bins.sh)
+echo "Bins ablation:  Job ${JOB1}  (128, 256 bins)"
 
-# Stage 2: Loss x Bins ablation (depends on Stage 1)
-JOB2=$(sbatch --parsable --dependency=afterany:${JOB1} scripts/ablate_loss_bins.sh)
-echo "Stage 2 (Loss x Bins): Job ${JOB2} (depends on ${JOB1})"
+JOB2=$(sbatch --parsable scripts/ablate_loss.sh)
+echo "Loss ablation:  Job ${JOB2}  (pure CE, ordinal_kl)"
 
-# Stage 3: Grid resolution ablation (depends on Stage 2)
-JOB3=$(sbatch --parsable --dependency=afterany:${JOB2} scripts/ablate_grid.sh)
-echo "Stage 3 (Grid): Job ${JOB3} (depends on ${JOB2})"
+JOB3=$(sbatch --parsable scripts/ablate_grid.sh)
+echo "Grid ablation:  Job ${JOB3}  (grid=0.01)"
 
 echo ""
-echo "=== Pipeline submitted ==="
-echo "Stage 1 (Color):      ${JOB1}"
-echo "Stage 2 (Loss x Bins): ${JOB2}  (after ${JOB1})"
-echo "Stage 3 (Grid):        ${JOB3}  (after ${JOB2})"
+echo "=== 5 runs submitted (all independent) ==="
+echo "  Bins:  ${JOB1}  [0]=128bins  [1]=256bins"
+echo "  Loss:  ${JOB2}  [0]=pure_ce  [1]=ordinal_kl"
+echo "  Grid:  ${JOB3}  grid=0.01"
+echo ""
+echo "Already have baselines:"
+echo "  physics/64bins/ce_emd/grid=0.02  -> val_rl2=0.242"
+echo "  curv_only/64bins/ce_emd/grid=0.02 -> val_rl2=0.243"
 echo ""
 echo "Monitor with: squeue -u $(whoami)"

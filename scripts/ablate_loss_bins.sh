@@ -31,11 +31,16 @@ echo "Start time: $(date)"
 echo "========================================="
 
 srun python src/train.py \
-    data.color_mode=${COLOR} \
     data.grid_size=${GRID} \
+    data.batch_size=4 \
     data.num_cp_bins=${BINS} \
+    data.color_mode=${COLOR} \
     model.num_cp_bins=${BINS} \
+    model.num_concat_levels=4 \
+    model.upcast_dim=1232 \
     model.loss_type=${LOSS} \
+    model.lambda_emd=0.1 \
+    model.lambda_recon=0.0 \
     trainer.max_epochs=${EPOCHS} \
     trainer.devices=1 \
     trainer.strategy=auto \

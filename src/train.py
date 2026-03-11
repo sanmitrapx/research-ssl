@@ -16,10 +16,11 @@ def main(cfg: DictConfig):
     pl.seed_everything(cfg.get("seed", 42))
 
     print("Loading data...")
-    dm = SonataDataModule(**cfg.data)
+    data_cfg = {k: v for k, v in cfg.data.items() if not k.startswith("_")}
+    dm = SonataDataModule(**data_cfg)
 
     print("Loading model...")
-    model_cfg = dict(cfg.model)
+    model_cfg = {k: v for k, v in cfg.model.items() if not k.startswith("_")}
     model_cfg["bin_centers"] = dm.bin_centers
     model = SonataCpClassifier(**model_cfg)
 
@@ -28,7 +29,20 @@ def main(cfg: DictConfig):
     print(f"Total parameters: {total:,}")
     print(f"Trainable parameters: {trainable:,}")
 
-    trainer = pl.Trainer(**cfg.trainer)
+    callbacks = []
+    if "callbacks" in cfg.trainer:
+        for cb_cfg in cfg.trainer.callbacks:
+            callbacks.append(hydra.utils.instantiate(cb_cfg))
+
+    logger = None
+    if "logger" in cfg.trainer:
+        logger = hydra.utils.instantiate(cfg.trainer.logger)
+
+    trainer_cfg = {
+        k: v for k, v in cfg.trainer.items()
+        if not k.startswith("_") and k not in ("callbacks", "logger")
+    }
+    trainer = pl.Trainer(**trainer_cfg, callbacks=callbacks, logger=logger)
 
     print("Starting training...")
     trainer.fit(model, dm)
