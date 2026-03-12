@@ -9,8 +9,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .sonata_cp_classifier import SonataCpClassifier
-from .utils.knn import chunked_knn
+from ..sonata_cp_classifier import SonataCpClassifier
+from ..utils.knn import chunked_knn
 
 
 class PointTransformerBlock(nn.Module):

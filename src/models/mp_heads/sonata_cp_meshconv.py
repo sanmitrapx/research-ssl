@@ -12,8 +12,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch_scatter
 
-from .sonata_cp_classifier import SonataCpClassifier
-from .utils.knn import faces_to_edge_index
+from ..sonata_cp_classifier import SonataCpClassifier
+from ..utils.knn import faces_to_edge_index
 
 
 class MeshConvBlock(nn.Module):
