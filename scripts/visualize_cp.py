@@ -19,6 +19,7 @@ from matplotlib.cm import ScalarMappable
 
 from src.data.sonata_datamodule import SonataDataModule
 from src.models.sonata_cp_classifier import SonataCpClassifier
+from src.models.resnet_heads.sonata_cp_regression import SonataCpRegression
 
 
 def load_raw_mesh(h5_path):
@@ -37,7 +38,7 @@ def build_pv_mesh(verts, faces):
     return pv.PolyData(verts, cells)
 
 
-def _render_panel(mesh, scalars, clim, cmap, title, cam_pos, parallel=False, window_size=(800, 600)):
+def _render_panel(mesh, scalars, clim, cmap, title, cam_pos, parallel=False, zoom=1.0, window_size=(800, 600)):
     """Render a single PyVista panel to an image array."""
     pl = pv.Plotter(off_screen=True, window_size=window_size)
     pl.add_mesh(
@@ -52,6 +53,8 @@ def _render_panel(mesh, scalars, clim, cmap, title, cam_pos, parallel=False, win
     pl.camera_position = cam_pos
     if parallel:
         pl.camera.parallel_projection = True
+    if zoom != 1.0:
+        pl.camera.zoom(zoom)
 
     pl.reset_camera_clipping_range()
     near, far = pl.camera.clipping_range
@@ -62,7 +65,7 @@ def _render_panel(mesh, scalars, clim, cmap, title, cam_pos, parallel=False, win
     return img
 
 
-def plot_comparison(verts, faces, cp_gt, cp_pred, rl2, out_path):
+def plot_comparison(verts, faces, cp_gt, cp_pred, rl2, out_path, style="default"):
     """Create a 2x3 comparison figure (iso + top views for GT, Pred, Diff)."""
     mesh = build_pv_mesh(verts, faces)
     cp_diff = cp_pred - cp_gt
@@ -71,28 +74,39 @@ def plot_comparison(verts, faces, cp_gt, cp_pred, rl2, out_path):
     L = verts.ptp(axis=0).max()
 
     cam_iso = [
-        (cx + L * 1.2, cy - L * 1.2, cz + L * 0.8),
+        (cx - L * 0.9, cy - L * 0.9, cz + L * 0.6),
         (cx, cy, cz),
         (0, 0, 1),
     ]
     cam_top = [
         (cx, cy, cz + L * 1.5),
         (cx, cy, cz),
-        (1, 0, 0),
+        (0, -1, 0),
     ]
 
-    cp_lo, cp_hi = np.percentile(cp_gt, [1, 99])
-    diff_abs = max(abs(cp_diff.min()), abs(cp_diff.max()), 0.1)
+    if style == "paper":
+        cp_clim = (-2.0, 1.0)
+        diff_lim = 0.10
+        cp_cmap = "RdBu_r"
+        cp_cb_label = "GT / Pred"
+        diff_cb_label = "Difference"
+    else:
+        cp_lo, cp_hi = np.percentile(cp_gt, [1, 99])
+        cp_clim = (cp_lo, cp_hi)
+        diff_lim = max(abs(cp_diff.min()), abs(cp_diff.max()), 0.1)
+        cp_cmap = "jet"
+        cp_cb_label = "Cp"
+        diff_cb_label = "ΔCp"
 
     imgs = {}
     for label, scalars, clim, cmap in [
-        ("gt", cp_gt, (cp_lo, cp_hi), "jet"),
-        ("pred", cp_pred, (cp_lo, cp_hi), "jet"),
-        ("diff", cp_diff, (-diff_abs, diff_abs), "RdBu_r"),
+        ("gt", cp_gt, cp_clim, cp_cmap),
+        ("pred", cp_pred, cp_clim, cp_cmap),
+        ("diff", cp_diff, (-diff_lim, diff_lim), "RdBu_r"),
     ]:
         mesh[label] = scalars
         imgs[f"{label}_iso"] = _render_panel(mesh, label, clim, cmap, label, cam_iso)
-        imgs[f"{label}_top"] = _render_panel(mesh, label, clim, cmap, label, cam_top, parallel=True)
+        imgs[f"{label}_top"] = _render_panel(mesh, label, clim, cmap, label, cam_top, parallel=True, zoom=0.55)
 
     fig = plt.figure(figsize=(18, 12))
     gs = gridspec.GridSpec(3, 3, height_ratios=[1, 1, 0.08], hspace=0.05, wspace=0.05)
@@ -109,18 +123,21 @@ def plot_comparison(verts, faces, cp_gt, cp_pred, rl2, out_path):
         ax_top.axis("off")
 
     ax_cb_cp = fig.add_subplot(gs[2, :2])
-    norm_cp = Normalize(vmin=cp_lo, vmax=cp_hi)
-    sm_cp = ScalarMappable(cmap="jet", norm=norm_cp)
+    norm_cp = Normalize(vmin=cp_clim[0], vmax=cp_clim[1])
+    sm_cp = ScalarMappable(cmap=cp_cmap, norm=norm_cp)
     cb_cp = fig.colorbar(sm_cp, cax=ax_cb_cp, orientation="horizontal")
-    cb_cp.set_label("Cp", fontsize=12)
+    cb_cp.set_label(cp_cb_label, fontsize=12)
 
     ax_cb_diff = fig.add_subplot(gs[2, 2])
-    norm_diff = Normalize(vmin=-diff_abs, vmax=diff_abs)
+    norm_diff = Normalize(vmin=-diff_lim, vmax=diff_lim)
     sm_diff = ScalarMappable(cmap="RdBu_r", norm=norm_diff)
     cb_diff = fig.colorbar(sm_diff, cax=ax_cb_diff, orientation="horizontal")
-    cb_diff.set_label("ΔCp", fontsize=12)
+    cb_diff.set_label(diff_cb_label, fontsize=12)
 
-    fig.suptitle(f"rL2 = {rl2:.4f}", fontsize=16, fontweight="bold", y=0.98)
+    if style == "paper":
+        fig.text(0.05, 0.02, f"RL2: {rl2:.4f}", fontsize=14, fontweight="bold")
+    else:
+        fig.suptitle(f"rL2 = {rl2:.4f}", fontsize=16, fontweight="bold", y=0.98)
 
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     fig.savefig(out_path, dpi=200, bbox_inches="tight", pad_inches=0.1)
@@ -133,6 +150,8 @@ def main():
     parser.add_argument("--ckpt", required=True, help="Path to model checkpoint")
     parser.add_argument("--sample_idx", type=int, default=0, help="Test sample index")
     parser.add_argument("--out", default="plots/cp_pred.png", help="Output path")
+    parser.add_argument("--style", default="default", choices=["default", "paper"],
+                        help="Plot style: 'default' (jet/percentile) or 'paper' (RdBu_r/fixed range)")
     args = parser.parse_args()
 
     dm = SonataDataModule(
@@ -144,7 +163,15 @@ def main():
         color_mode="physics",
     )
 
-    model = SonataCpClassifier.load_from_checkpoint(args.ckpt, map_location="cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    ckpt_data = torch.load(args.ckpt, map_location="cpu")
+    is_regression = "regression_head.0.weight" in ckpt_data.get("state_dict", {})
+
+    if is_regression:
+        model = SonataCpRegression.load_from_checkpoint(args.ckpt, map_location=device)
+    else:
+        model = SonataCpClassifier.load_from_checkpoint(args.ckpt, map_location=device)
+    model.to(device)
     model.eval()
 
     test_ds = dm.base.test_dataset
@@ -155,17 +182,21 @@ def main():
     design_name = h5_path.parent.name
 
     transform = dm._test_transform
-    batch = dm._transform_item(item, transform)
-    batch = {k: v.unsqueeze(0) if torch.is_tensor(v) and v.dim() >= 1 else v for k, v in batch.items()}
+    sample = dm._transform_item(item, transform)
+    batch = dm._collate_batched([sample])
 
+    batch = {k: v.to(device) if torch.is_tensor(v) else v for k, v in batch.items()}
     with torch.no_grad():
         out = model(batch)
-    cp_pred = out["cp_hat"].squeeze().numpy()
+    cp_pred = out["cp_hat"].squeeze()
+    if is_regression:
+        cp_pred = model._denormalize(cp_pred)
+    cp_pred = cp_pred.cpu().numpy()
 
     rl2 = np.linalg.norm(cp_pred - raw_cp) / (np.linalg.norm(raw_cp) + 1e-8)
 
     out_path = args.out if args.out != "plots/cp_pred.png" else f"plots/{design_name}_cp_pred.png"
-    plot_comparison(raw_verts, raw_faces, raw_cp, cp_pred, rl2, out_path)
+    plot_comparison(raw_verts, raw_faces, raw_cp, cp_pred, rl2, out_path, style=args.style)
 
 
 if __name__ == "__main__":

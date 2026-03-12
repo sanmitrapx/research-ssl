@@ -13,6 +13,8 @@
 source /opt/miniconda/etc/profile.d/conda.sh
 conda activate sonata
 
+export CUDA_VISIBLE_DEVICES=2,3
+
 EPOCHS=200
 
 echo "========================================="
@@ -21,7 +23,7 @@ echo "Experiment: regression_rl2"
 echo "  model=sonata_cp_regression  loss=rL2  epochs=${EPOCHS}"
 echo "  scheduler=CosineAnnealingLR  layerwise_lr_decay"
 echo "  batch_size=1  accumulate_grad_batches=4 (effective=4)"
-echo "Node: $(hostname), GPUs: 2"
+echo "Node: $(hostname), GPUs: 4"
 echo "Start time: $(date)"
 echo "========================================="
 
