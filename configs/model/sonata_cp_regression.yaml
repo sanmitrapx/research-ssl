@@ -1,0 +1,13 @@
+_target_: src.models.resnet_heads.sonata_cp_regression.SonataCpRegression
+sonata_repo: facebook/sonata
+decoder_dims: [512, 512, 256, 256]
+upcast_dim: 1232
+num_concat_levels: 4
+use_geometric_features: false
+learning_rate: 1e-4
+head_lr: 1e-3
+weight_decay: 0.05
+lr_decay_rate: 0.65
+max_epochs: 100
+eta_min: 1e-6
+dropout: 0.1
