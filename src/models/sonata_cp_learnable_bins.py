@@ -8,6 +8,7 @@ A regularisation term keeps bins ordered and prevents collapse.
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.optim import AdamW
 from .sonata_cp_classifier import SonataCpClassifier
 
 
@@ -59,14 +60,5 @@ class SonataCpLearnableBins(SonataCpClassifier):
 
         return base_loss + self.hparams.bin_spread_reg * collapse_penalty
 
-    def configure_optimizers(self):
-        optimizers, schedulers = super().configure_optimizers()
-        # Add bin centers to the head param group (highest LR)
-        for pg in optimizers[0].param_groups:
-            if any(p is self.bin_centers_param for p in pg["params"]):
-                return optimizers, schedulers
-        optimizers[0].add_param_group({
-            "params": [self.bin_centers_param],
-            "lr": self.hparams.head_lr,
-        })
-        return optimizers, schedulers
+    def _get_extra_param_groups(self):
+        return [{"params": [self.bin_centers_param], "lr": self.hparams.head_lr}]

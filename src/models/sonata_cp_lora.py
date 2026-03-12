@@ -1,45 +1,32 @@
+"""LoRA fine-tuning of Sonata for Cp classification using HuggingFace PEFT.
+
+Freezes the entire Sonata encoder and injects lightweight low-rank
+adapters into the attention QKV and projection layers via peft's
+LoraConfig + get_peft_model.  Only the adapters + classification head
+are trained.
+
+Typical parameter budget at rank=8:
+    Encoder (frozen):  ~108M params  (0 trainable)
+    LoRA adapters:     ~0.5-1.5M    (trainable)
+    Classifier head:   ~1-2M        (trainable)
+"""
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
 from torch.optim import AdamW
 import sonata
+from peft import LoraConfig, get_peft_model
 
 from .utils.losses import EMDLoss, LpLoss
+from .sonata_cp_classifier import _ResidualBlock
 
 LOSS_TYPES = ("ce_emd", "ordinal_kl")
 
 
-class _ResidualBlock(nn.Module):
-    """Two-layer residual block: Linear-ReLU-Dropout-Linear + skip."""
-
-    def __init__(self, dim, dropout):
-        super().__init__()
-        self.fc1 = nn.Linear(dim, dim)
-        self.fc2 = nn.Linear(dim, dim)
-        self.drop = nn.Dropout(dropout)
-
-    def forward(self, x):
-        out = self.drop(F.relu(self.fc1(x)))
-        out = self.fc2(out)
-        return x + out
-
-
-class SonataCpClassifier(pl.LightningModule):
-    """Sonata encoder + per-point MLP for Cp classification.
-
-    Follows the original Sonata paper's approach: encoder features are
-    up-cast back to grid-sample resolution via the pooling hierarchy,
-    then mapped to original-resolution points using the GridSample
-    inverse mapping.  A residual MLP predicts per-point Cp bin logits.
-
-    Fine-tuning: layerwise LR decay (lower LR for early encoder stages).
-
-    Loss types (``loss_type``):
-        ce_emd      -- CrossEntropy + lambda_emd * EMD
-        ordinal_kl  -- Gaussian-smoothed KL divergence (sigma controlled by
-                       ``label_smoothing_sigma``)
-    """
+class SonataCpLoRA(pl.LightningModule):
+    """Sonata encoder with PEFT LoRA adapters + per-point Cp classification head."""
 
     DEFAULT_UPCAST_DIM = 1088
 
@@ -52,22 +39,24 @@ class SonataCpClassifier(pl.LightningModule):
         upcast_dim: int = 1088,
         num_concat_levels: int = 2,
         use_geometric_features: bool = False,
-        learning_rate: float = 0.0001,
-        head_lr: float = 0.001,
+        learning_rate: float = 1e-3,
         weight_decay: float = 0.05,
-        lr_decay_rate: float = 0.65,
         max_epochs: int = 100,
-        eta_min: float = 1e-6,
+        pct_start: float = 0.05,
+        div_factor: float = 10.0,
+        final_div_factor: float = 1000.0,
         dropout: float = 0.1,
         loss_type: str = "ce_emd",
         weighted_emd: bool = True,
         lambda_emd: float = 0.1,
         lambda_recon: float = 0.0,
         label_smoothing_sigma: float = 2.0,
-        **kwargs,
+        lora_rank: int = 8,
+        lora_alpha: float = 16.0,
+        lora_dropout: float = 0.05,
+        lora_targets: list = ("attn.qkv", "attn.proj"),
     ):
         super().__init__()
-        kwargs.clear()
         if loss_type not in LOSS_TYPES:
             raise ValueError(
                 f"Unknown loss_type '{loss_type}', choose from {LOSS_TYPES}"
@@ -84,9 +73,20 @@ class SonataCpClassifier(pl.LightningModule):
             )
 
         custom_config = dict(enc_mode=True, enable_flash=True)
-        self.sonata = sonata.model.load(
+        base_sonata = sonata.model.load(
             "sonata", repo_id=sonata_repo, custom_config=custom_config
         )
+
+        # Apply PEFT LoRA to the Sonata encoder
+        lora_config = LoraConfig(
+            r=lora_rank,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+            target_modules=list(lora_targets),
+            bias="none",
+        )
+        self.sonata = get_peft_model(base_sonata, lora_config)
+        self.sonata.print_trainable_parameters()
 
         K = len(self.bin_centers)
         point_feat_dim = upcast_dim
@@ -103,48 +103,28 @@ class SonataCpClassifier(pl.LightningModule):
         ])
         widths = widths / widths.sum()
 
-        self.emd_loss = EMDLoss(
-            K, reduction="mean", bin_widths=widths
-        )
+        self.emd_loss = EMDLoss(K, reduction="mean", bin_widths=widths)
         self.ce_loss = nn.CrossEntropyLoss()
         self.rl2_loss = LpLoss()
 
     def _build_head(self, input_dim, decoder_dims, num_bins, dropout):
-        """Build residual MLP head.
-
-        Consecutive dims of the same size become a _ResidualBlock;
-        a change in width is handled by a Linear projection.
-        """
         layers = []
         in_dim = input_dim
-
-        for i in range(len(decoder_dims)):
-            dim = decoder_dims[i]
+        for i, dim in enumerate(decoder_dims):
             if dim == in_dim and i > 0:
                 layers.extend([
-                    _ResidualBlock(dim, dropout),
-                    nn.ReLU(),
-                    nn.Dropout(dropout),
+                    _ResidualBlock(dim, dropout), nn.ReLU(), nn.Dropout(dropout),
                 ])
             else:
                 layers.extend([
-                    nn.Linear(in_dim, dim),
-                    nn.ReLU(),
-                    nn.Dropout(dropout),
+                    nn.Linear(in_dim, dim), nn.ReLU(), nn.Dropout(dropout),
                 ])
             in_dim = dim
-
         layers.append(nn.Linear(in_dim, num_bins))
         return nn.Sequential(*layers)
 
     @staticmethod
     def _upcast_features(point, num_concat_levels):
-        """Up-cast encoder features to grid-sample resolution.
-
-        Walks up the pooling hierarchy: at each level, upsample the
-        coarse features via the inverse mapping and concat with the
-        finer parent features, then move to the parent level.
-        """
         for _ in range(num_concat_levels):
             parent = point.pop("pooling_parent")
             inverse = point.pop("pooling_inverse")
@@ -159,10 +139,7 @@ class SonataCpClassifier(pl.LightningModule):
 
         encoded = self._upcast_features(encoded, self.hparams.num_concat_levels)
         feat = encoded.feat
-
-        # Map grid-sampled features back to original mesh resolution
-        inverse = point_data["inverse"]
-        feat = feat[inverse]
+        feat = feat[point_data["inverse"]]
 
         if self.hparams.use_geometric_features:
             geo = torch.cat([
@@ -179,7 +156,6 @@ class SonataCpClassifier(pl.LightningModule):
         return dict(logits=logits, probs=probs, cp_hat=cp_hat)
 
     def _ordinal_kl_loss(self, logits, target_bins):
-        """Gaussian-smoothed ordinal KL divergence loss."""
         K = logits.shape[-1]
         sigma = self.hparams.label_smoothing_sigma
         bins = torch.arange(K, device=logits.device, dtype=torch.float32)
@@ -190,7 +166,6 @@ class SonataCpClassifier(pl.LightningModule):
         return F.kl_div(log_probs, soft_targets, reduction="batchmean")
 
     def _compute_loss(self, logits, target_bins, pressure_raw, cp_hat):
-        """Compute training loss based on configured loss_type."""
         if self.hparams.loss_type == "ordinal_kl":
             loss = self._ordinal_kl_loss(logits, target_bins)
         else:
@@ -232,53 +207,29 @@ class SonataCpClassifier(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         return self.validation_step(batch, batch_idx)
 
-    def _get_encoder_param_groups(self):
-        """Build per-stage param groups with decaying LR for layerwise_lr strategy."""
-        lr = self.hparams.learning_rate
-        decay = self.hparams.lr_decay_rate
-        num_stages = 5
-
-        groups = []
-        emb_params = list(self.sonata.embedding.parameters())
-        groups.append({"params": emb_params, "lr": lr * (decay ** num_stages)})
-
-        for s in range(num_stages):
-            stage = getattr(self.sonata.enc, f"enc{s}", None)
-            if stage is not None:
-                stage_params = list(stage.parameters())
-                stage_lr = lr * (decay ** (num_stages - 1 - s))
-                groups.append({"params": stage_params, "lr": stage_lr})
-
-        return groups
-
-    def _get_extra_param_groups(self):
-        """Override in subclasses to register extra trainable param groups."""
-        return []
-
-    def _encode(self, point_data):
-        """Run Sonata encoder and upcast to grid-sampled resolution.
-
-        Returns the upcast Point (has .feat and .coord at grid level).
-        """
-        encoded = self.sonata(point_data)
-        return self._upcast_features(encoded, self.hparams.num_concat_levels)
-
     def configure_optimizers(self):
-        head_lr = self.hparams.head_lr
+        lr = self.hparams.learning_rate
         wd = self.hparams.weight_decay
 
-        param_groups = self._get_encoder_param_groups()
-        param_groups.extend(self._get_extra_param_groups())
-        param_groups.append({
-            "params": self.cp_classifier_head.parameters(),
-            "lr": head_lr,
-        })
+        # PEFT marks LoRA params as requires_grad, everything else is frozen
+        lora_params = [p for p in self.sonata.parameters() if p.requires_grad]
+        head_params = list(self.cp_classifier_head.parameters())
+
+        param_groups = [
+            {"params": lora_params, "lr": lr},
+            {"params": head_params, "lr": lr},
+        ]
 
         optimizer = AdamW(param_groups, weight_decay=wd)
 
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        total_steps = self.trainer.estimated_stepping_batches
+        scheduler = torch.optim.lr_scheduler.OneCycleLR(
             optimizer,
-            T_max=self.hparams.max_epochs,
-            eta_min=self.hparams.eta_min,
+            max_lr=lr,
+            total_steps=total_steps,
+            pct_start=self.hparams.pct_start,
+            anneal_strategy="cos",
+            div_factor=self.hparams.div_factor,
+            final_div_factor=self.hparams.final_div_factor,
         )
-        return [optimizer], [{"scheduler": scheduler, "interval": "epoch"}]
+        return [optimizer], [{"scheduler": scheduler, "interval": "step"}]

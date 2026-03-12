@@ -189,6 +189,11 @@ class SonataDataModule(pl.LightningDataModule):
                 item["pressure_bin"].flatten().astype(np.int64)
             ).long()
 
+        if "faces" in item:
+            extras["faces"] = torch.from_numpy(
+                item["faces"].astype(np.int64)
+            )
+
         point = transform(data)
         point.update(extras)
         return point
@@ -232,6 +237,15 @@ class SonataDataModule(pl.LightningDataModule):
             n = p["uncentered_coord"].shape[0]
             mesh_batch_list.append(torch.full((n,), i, dtype=torch.long))
         collated["mesh_batch"] = torch.cat(mesh_batch_list)
+
+        # Offset face vertex indices for batched samples
+        if "faces" in items[0]:
+            face_parts = []
+            vertex_offset = 0
+            for p in items:
+                face_parts.append(p["faces"] + vertex_offset)
+                vertex_offset += p["uncentered_coord"].shape[0]
+            collated["faces"] = torch.cat(face_parts)
 
         return collated
 

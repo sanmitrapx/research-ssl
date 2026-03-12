@@ -1,6 +1,6 @@
-_target_: src.models.sonata_cp_subbin.SonataCpSubBin
+_target_: src.models.sonata_cp_gcn.SonataCpGCN
 sonata_repo: facebook/sonata
-decoder_dims: [512, 512, 256, 256]
+decoder_dims: [256, 256]
 num_cp_bins: 64
 upcast_dim: 1232
 num_concat_levels: 4
@@ -10,13 +10,13 @@ head_lr: 1e-3
 weight_decay: 0.05
 lr_decay_rate: 0.65
 max_epochs: 100
-pct_start: 0.05
-div_factor: 10.0
-final_div_factor: 1000.0
+eta_min: 1e-6
 dropout: 0.1
 loss_type: ce_emd
 weighted_emd: true
 lambda_emd: 0.1
 lambda_recon: 0.0
 label_smoothing_sigma: 2.0
-lambda_offset: 1.0
+gcn_k: 16
+gcn_layers: 3
+gcn_dim: 256
