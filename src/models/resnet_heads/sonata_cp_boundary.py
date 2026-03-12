@@ -12,7 +12,7 @@ the loss at those points.
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .sonata_cp_classifier import SonataCpClassifier
+from ..sonata_cp_classifier import SonataCpClassifier
 from .utils.losses import EMDLoss
 
 

@@ -9,7 +9,7 @@ predicted bin, eliminating quantization error from discrete binning.
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .sonata_cp_classifier import SonataCpClassifier, _ResidualBlock
+from ..sonata_cp_classifier import SonataCpClassifier, _ResidualBlock
 
 
 class SonataCpSubBin(SonataCpClassifier):

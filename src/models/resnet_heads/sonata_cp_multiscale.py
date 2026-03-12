@@ -10,7 +10,7 @@ Combined loss trains both; inference uses the fine head.
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .sonata_cp_classifier import SonataCpClassifier, _ResidualBlock
+from ..sonata_cp_classifier import SonataCpClassifier, _ResidualBlock
 
 
 class SonataCpMultiScale(SonataCpClassifier):

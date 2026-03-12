@@ -11,7 +11,7 @@ The CRF is differentiable and trained end-to-end.
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .sonata_cp_classifier import SonataCpClassifier
+from ..sonata_cp_classifier import SonataCpClassifier
 
 
 class KNNCRFLayer(nn.Module):

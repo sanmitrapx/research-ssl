@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim import AdamW
-from .sonata_cp_classifier import SonataCpClassifier
+from ..sonata_cp_classifier import SonataCpClassifier
 
 
 class SonataCpLearnableBins(SonataCpClassifier):

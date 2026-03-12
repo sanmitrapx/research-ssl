@@ -1,4 +1,4 @@
-_target_: src.models.sonata_cp_learnable_bins.SonataCpLearnableBins
+_target_: src.models.resnet_heads.sonata_cp_learnable_bins.SonataCpLearnableBins
 sonata_repo: facebook/sonata
 decoder_dims: [512, 512, 256, 256]
 num_cp_bins: 64

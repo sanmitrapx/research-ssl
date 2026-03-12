@@ -14,7 +14,7 @@ Networks with Application to Age Estimation", Pattern Recognition 2020.
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .sonata_cp_classifier import SonataCpClassifier, _ResidualBlock
+from ..sonata_cp_classifier import SonataCpClassifier, _ResidualBlock
 
 
 class CumulativeOrdinalHead(nn.Module):
