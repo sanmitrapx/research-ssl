@@ -21,7 +21,13 @@ def main(cfg: DictConfig):
     print("Loading model...")
     model_target = cfg.model.get("_target_", "src.models.sonata_cp_classifier.SonataCpClassifier")
     print(f"  Model class: {model_target}")
-    model = hydra.utils.instantiate(cfg.model, bin_centers=dm.bin_centers, _convert_="partial")
+    model = hydra.utils.instantiate(
+        cfg.model,
+        bin_centers=dm.bin_centers,
+        cp_mean=dm.cp_mean,
+        cp_std=dm.cp_std,
+        _convert_="partial",
+    )
 
     total = sum(p.numel() for p in model.parameters())
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)

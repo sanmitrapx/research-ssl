@@ -48,11 +48,16 @@ class SonataCpRegression(pl.LightningModule):
         max_epochs: int = 100,
         eta_min: float = 1e-6,
         dropout: float = 0.1,
+        cp_mean: float = 0.0,
+        cp_std: float = 1.0,
         **kwargs,
     ):
         super().__init__()
         kwargs.clear()
         self.save_hyperparameters()
+
+        self.register_buffer("cp_mean", torch.tensor(cp_mean, dtype=torch.float32))
+        self.register_buffer("cp_std", torch.tensor(cp_std, dtype=torch.float32))
 
         custom_config = dict(enc_mode=True, enable_flash=True)
         self.sonata = sonata.model.load(
@@ -121,25 +126,33 @@ class SonataCpRegression(pl.LightningModule):
         cp_hat = self.regression_head(feat).squeeze(-1)
         return dict(cp_hat=cp_hat)
 
-    def _compute_loss(self, cp_hat, pressure_raw):
-        return self.rl2_loss(cp_hat.unsqueeze(0), pressure_raw.unsqueeze(0))
+    def _denormalize(self, cp_standardized):
+        return cp_standardized * self.cp_std + self.cp_mean
 
     def training_step(self, batch, batch_idx):
         out = self.forward(batch)
-        loss = self._compute_loss(out["cp_hat"], batch["pressure_raw"])
+        cp_hat_std = out["cp_hat"]
+        target_std = batch["pressure"]
+        loss = self.rl2_loss(cp_hat_std.unsqueeze(0), target_std.unsqueeze(0))
         self.log("train_loss", loss, on_epoch=True, on_step=False, prog_bar=True, sync_dist=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         out = self.forward(batch)
-        pressure_raw = batch["pressure_raw"]
-        loss = self._compute_loss(out["cp_hat"], pressure_raw)
-        mae = (out["cp_hat"] - pressure_raw).abs().mean()
+        cp_hat_std = out["cp_hat"]
+        target_std = batch["pressure"]
 
-        self.log("val_loss", loss, on_epoch=True, on_step=False, prog_bar=True, sync_dist=True)
-        self.log("val_rl2", loss, on_epoch=True, on_step=False, prog_bar=True, sync_dist=True)
+        train_loss = self.rl2_loss(cp_hat_std.unsqueeze(0), target_std.unsqueeze(0))
+
+        cp_hat_raw = self._denormalize(cp_hat_std)
+        pressure_raw = batch["pressure_raw"]
+        rl2 = self.rl2_loss(cp_hat_raw.unsqueeze(0), pressure_raw.unsqueeze(0))
+        mae = (cp_hat_raw - pressure_raw).abs().mean()
+
+        self.log("val_loss", train_loss, on_epoch=True, on_step=False, prog_bar=True, sync_dist=True)
+        self.log("val_rl2", rl2, on_epoch=True, on_step=False, prog_bar=True, sync_dist=True)
         self.log("val_mae", mae, on_epoch=True, on_step=False, prog_bar=True, sync_dist=True)
-        return loss
+        return train_loss
 
     def test_step(self, batch, batch_idx):
         return self.validation_step(batch, batch_idx)

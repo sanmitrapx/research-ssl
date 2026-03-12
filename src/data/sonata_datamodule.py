@@ -86,6 +86,18 @@ class SonataDataModule(pl.LightningDataModule):
     def bin_centers(self):
         return self.base.cp_binning_stats.bin_centers.tolist()
 
+    @property
+    def cp_mean(self):
+        if self.base.norm_stats is not None:
+            return float(self.base.norm_stats.pressure_mean)
+        return 0.0
+
+    @property
+    def cp_std(self):
+        if self.base.norm_stats is not None:
+            return float(self.base.norm_stats.pressure_std)
+        return 1.0
+
     def _build_transform(self, mode):
         # GridSample test mode returns a list of augmentations which breaks
         # downstream transforms; use train mode for both (only difference is
