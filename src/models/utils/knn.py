@@ -1,23 +1,42 @@
 import torch
-from torch_cluster import knn
+import pointops_cuda
 
 
-def chunked_knn(coords, k=16, **_kwargs):
-    """CUDA-accelerated KNN via torch_cluster.
+def chunked_knn(coords, k=16, ref=None, **_kwargs):
+    """CUDA-accelerated KNN via pointops.
 
     Args:
-        coords: (N, 3) point coordinates (any device)
-        k: number of neighbours (excluding self)
+        coords: (N, 3) query point coordinates (CUDA)
+        k: number of neighbours (excluding self for self-KNN)
+        ref: (M, 3) optional reference points. If None, self-KNN is performed.
 
     Returns:
-        indices: (N, k) neighbour indices into *coords*
+        indices: (N, k) LongTensor of neighbour indices into *ref* (or *coords*)
     """
-    # torch_cluster.knn returns (2, N*k): row=query, col=neighbor
-    # k+1 because it includes self as nearest neighbour
-    edge_index = knn(coords, coords, k=k + 1)
-    col = edge_index[1].view(-1, k + 1)
-    # drop self (first column)
-    return col[:, 1:]
+    query = coords.float().contiguous()
+    N = query.shape[0]
+
+    if ref is None:
+        xyz = query
+        M = N
+        nsample = k + 1
+        drop_self = True
+    else:
+        xyz = ref.float().contiguous()
+        M = xyz.shape[0]
+        nsample = k
+        drop_self = False
+
+    offset_ref = torch.tensor([M], dtype=torch.int32, device=coords.device)
+    offset_query = torch.tensor([N], dtype=torch.int32, device=coords.device)
+
+    idx = torch.zeros(N, nsample, dtype=torch.int32, device=coords.device)
+    dist2 = torch.zeros(N, nsample, dtype=torch.float32, device=coords.device)
+    pointops_cuda.knnquery_cuda(N, nsample, xyz, query, offset_ref, offset_query, idx, dist2)
+
+    if drop_self:
+        return idx[:, 1:].long()
+    return idx.long()
 
 
 def faces_to_edge_index(faces, inverse, num_grid_points):

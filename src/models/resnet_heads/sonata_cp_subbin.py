@@ -74,6 +74,9 @@ class SonataCpSubBin(SonataCpClassifier):
 
         return dict(logits=logits, probs=probs, cp_hat=cp_hat, offset=offset)
 
+    def _get_extra_param_groups(self):
+        return [{"params": self.offset_head.parameters(), "lr": self.hparams.head_lr}]
+
     def _compute_loss(self, logits, target_bins, pressure_raw, cp_hat):
         cls_loss = super()._compute_loss(logits, target_bins, pressure_raw, cp_hat)
         offset_loss = F.smooth_l1_loss(cp_hat, pressure_raw)

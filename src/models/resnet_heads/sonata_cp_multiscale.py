@@ -35,6 +35,9 @@ class SonataCpMultiScale(SonataCpClassifier):
         )
         self.coarse_ce = nn.CrossEntropyLoss()
 
+    def _get_extra_param_groups(self):
+        return [{"params": self.coarse_head.parameters(), "lr": self.hparams.head_lr}]
+
     def _build_head(self, input_dim, decoder_dims, num_bins, dropout):
         layers = []
         in_dim = input_dim

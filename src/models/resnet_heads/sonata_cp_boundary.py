@@ -13,7 +13,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from ..sonata_cp_classifier import SonataCpClassifier
-from .utils.losses import EMDLoss
+from ..utils.losses import EMDLoss
+from ..utils.knn import chunked_knn
 
 
 class SonataCpBoundary(SonataCpClassifier):
@@ -39,33 +40,11 @@ class SonataCpBoundary(SonataCpClassifier):
 
     def _compute_gradient_weights(self, coords, cp_values):
         """Compute per-point weight based on local Cp gradient magnitude."""
-        N = coords.shape[0]
-        max_pts = self.hparams.boundary_max_points
         k = self.hparams.boundary_k
 
-        if N > max_pts:
-            perm = torch.randperm(N, device=coords.device)[:max_pts]
-            sub_coords = coords[perm]
-            sub_cp = cp_values[perm]
-
-            dists = torch.cdist(sub_coords, sub_coords)
-            _, knn_idx = dists.topk(k + 1, dim=-1, largest=False)
-            knn_idx = knn_idx[:, 1:]  # exclude self
-
-            cp_neighbours = sub_cp[knn_idx]
-            grad_mag_sub = (cp_neighbours - sub_cp.unsqueeze(-1)).abs().mean(dim=-1)
-
-            # Map back to full resolution
-            full_dists = torch.cdist(coords, sub_coords)
-            nearest = full_dists.argmin(dim=-1)
-            grad_mag = grad_mag_sub[nearest]
-        else:
-            dists = torch.cdist(coords, coords)
-            _, knn_idx = dists.topk(k + 1, dim=-1, largest=False)
-            knn_idx = knn_idx[:, 1:]
-
-            cp_neighbours = cp_values[knn_idx]
-            grad_mag = (cp_neighbours - cp_values.unsqueeze(-1)).abs().mean(dim=-1)
+        knn_idx = chunked_knn(coords, k=k)  # (N, k)
+        cp_neighbours = cp_values[knn_idx]   # (N, k)
+        grad_mag = (cp_neighbours - cp_values.unsqueeze(-1)).abs().mean(dim=-1)
 
         grad_max = grad_mag.max().clamp(min=1e-6)
         weights = 1.0 + self.hparams.boundary_alpha * (grad_mag / grad_max)

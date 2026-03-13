@@ -12,6 +12,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from ..sonata_cp_classifier import SonataCpClassifier
+from ..utils.knn import chunked_knn
 
 
 class KNNCRFLayer(nn.Module):
@@ -31,9 +32,7 @@ class KNNCRFLayer(nn.Module):
 
     def _knn_graph(self, coords):
         """Build KNN indices from point coordinates. Returns (N, k) index tensor."""
-        dists = torch.cdist(coords, coords)
-        _, idx = dists.topk(self.k, dim=-1, largest=False)
-        return idx
+        return chunked_knn(coords, k=self.k)
 
     def forward(self, logits, coords):
         """
@@ -67,6 +66,9 @@ class SonataCpCRF(SonataCpClassifier):
         K = len(self.bin_centers)
         self.crf = KNNCRFLayer(K, k=crf_k, iterations=crf_iterations)
 
+    def _get_extra_param_groups(self):
+        return [{"params": self.crf.parameters(), "lr": self.hparams.head_lr}]
+
     def forward(self, point_data):
         encoded = self.sonata(point_data)
 
@@ -89,14 +91,11 @@ class SonataCpCRF(SonataCpClassifier):
         max_pts = self.hparams.crf_max_points
 
         if N > max_pts:
-            # Subsample for CRF to keep memory bounded, but refine all points
-            # by mapping each point to its nearest sampled neighbour
             perm = torch.randperm(N, device=coords.device)[:max_pts]
             sub_logits, sub_q = self.crf(logits[perm], coords[perm])
 
-            # Map back: find nearest sampled point for each original point
-            dists = torch.cdist(coords, coords[perm])
-            nearest = dists.argmin(dim=-1)
+            nn_idx = chunked_knn(coords, k=1, ref=coords[perm])
+            nearest = nn_idx.view(-1)
             refined_logits = sub_logits[nearest]
             probs = sub_q[nearest]
         else:

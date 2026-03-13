@@ -41,6 +41,9 @@ class SonataCpCumulative(SonataCpClassifier):
         last_hidden = list(self.hparams.decoder_dims)[-1]
         self.cumulative_head = CumulativeOrdinalHead(last_hidden, K)
 
+    def _get_extra_param_groups(self):
+        return [{"params": self.cumulative_head.parameters(), "lr": self.hparams.head_lr}]
+
     def _build_head(self, input_dim, decoder_dims, num_bins, dropout):
         """Build shared backbone (no final classification layer -- replaced by cumulative_head)."""
         layers = []
